@@ -75,8 +75,8 @@ class ModmailTimer(commands.Cog):
             return "☠️"
 
     @commands.Cog.listener()
-    async def on_thread_create(self, thread, creator, category, initial_message, message, silent):
-        """Initialize timer when a new thread is created"""
+    async def on_thread_ready(self, thread, *args, **kwargs):
+        """Initialize timer when a thread is ready"""
         if thread.channel:
             self.ticket_timers[thread.channel.id] = {
                 'last_user_message': datetime.now(timezone.utc),
