@@ -75,7 +75,7 @@ class ModmailTimer(commands.Cog):
             return "☠️"
 
     @commands.Cog.listener()
-    async def on_thread_create(self, thread, creator, category, initial_message):
+    async def on_thread_create(self, thread, creator, category, initial_message, message, silent):
         """Initialize timer when a new thread is created"""
         if thread.channel:
             self.ticket_timers[thread.channel.id] = {
@@ -90,7 +90,7 @@ class ModmailTimer(commands.Cog):
                 print(f"[ModmailTimer] Error initializing thread: {e}")
 
     @commands.Cog.listener()
-    async def on_thread_reply(self, thread, message, creator, channel, is_anonymous=False):
+    async def on_thread_reply(self, thread, message, creator, channel, is_anonymous):
         """Handle replies in the thread"""
         if not channel or is_anonymous:
             return
@@ -118,7 +118,7 @@ class ModmailTimer(commands.Cog):
             print(f"[ModmailTimer] Error in on_thread_reply: {e}")
 
     @commands.Cog.listener()
-    async def on_thread_close(self, thread, closer, silent, delete_channel, message):
+    async def on_thread_close(self, thread, closer, silent, delete_channel, message, scheduled):
         """Clean up timer when thread is closed"""
         if thread.channel and thread.channel.id in self.ticket_timers:
             del self.ticket_timers[thread.channel.id]
