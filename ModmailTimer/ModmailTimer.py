@@ -7,24 +7,30 @@ class ModmailTimer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.timers = {}
-        self.task = self.bot.loop.create_task(self.timer_loop())
+        self._task = None
+        self.start_timer()
+
+    def start_timer(self):
+        self._task = self.bot.loop.create_task(self.timer_loop())
 
     async def timer_loop(self):
         await self.bot.wait_until_ready()
-        while not self.bot.is_closed():
+        while True:
             try:
                 now = datetime.now(timezone.utc)
-                for cid, time in list(self.timers.items()):
-                    try:
-                        if channel := self.bot.get_channel(cid):
-                            minutes = (now - time).total_seconds() / 60
-                            emoji = self.get_emoji(minutes)
-                            if not channel.name.startswith(emoji):
-                                name = channel.name.split('│')[-1].strip() if '│' in channel.name else channel.name
-                                await asyncio.wait_for(channel.edit(name=f"{emoji}│{name}"[:100]), timeout=5.0)
-                    except Exception:
+                for cid in list(self.timers.keys()):
+                    if channel := self.bot.get_channel(cid):
+                        minutes = (now - self.timers[cid]).total_seconds() / 60
+                        emoji = self.get_emoji(minutes)
+                        if not channel.name.startswith(emoji):
+                            name = channel.name.split('│')[-1].strip() if '│' in channel.name else channel.name
+                            try:
+                                await channel.edit(name=f"{emoji}│{name}"[:100])
+                            except:
+                                self.timers.pop(cid, None)
+                    else:
                         self.timers.pop(cid, None)
-            except Exception:
+            except:
                 pass
             await asyncio.sleep(60)
 
@@ -41,13 +47,13 @@ class ModmailTimer(commands.Cog):
         if thread.channel:
             self.timers[thread.channel.id] = datetime.now(timezone.utc)
             try:
-                await asyncio.wait_for(thread.channel.edit(name=f"🟢│{thread.channel.name}"), timeout=5.0)
-            except Exception:
+                await thread.channel.edit(name=f"🟢│{thread.channel.name}")
+            except:
                 pass
 
     @commands.Cog.listener()
     async def on_thread_reply(self, thread, message, creator, channel, is_anonymous=False):
-        if not (channel and creator and not is_anonymous and not creator.bot):
+        if not channel or is_anonymous or creator.bot:
             return
         if hasattr(creator, 'roles'):
             self.timers.pop(channel.id, None)
