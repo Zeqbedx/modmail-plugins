@@ -35,7 +35,11 @@ class ModmailTimer(commands.Cog):
                             new_emoji = self.get_status_emoji(elapsed_minutes)
                             
                             if new_emoji != timer_data['current_emoji']:
-                                current_name = channel.name.split('│')[-1].strip()
+                                current_name = channel.name
+                    if '│' in current_name:
+                        current_name = current_name.split('│')[-1].strip()
+                    elif '-' in current_name:
+                        current_name = current_name.split('-', 1)[-1].strip()
                                 new_name = f"{new_emoji}│{current_name}"
                                 await channel.edit(name=new_name)
                                 print(f"[ModmailTimer] Updated {channel.name} to {new_name}")
@@ -69,7 +73,15 @@ class ModmailTimer(commands.Cog):
     async def on_thread_create(self, thread):
         """Initialize timer when a new thread is created"""
         if not hasattr(thread, 'channel') or not thread.channel:
+            print("[ModmailTimer] Thread has no channel, skipping")
             return
+            
+        try:
+            await self.bot.wait_until_ready()
+            channel = self.bot.get_channel(thread.channel.id)
+            if not channel:
+                print(f"[ModmailTimer] Could not find channel for thread {thread.id}")
+                return
             
         self.ticket_timers[thread.channel.id] = {
             'last_user_message': datetime.now(timezone.utc),
