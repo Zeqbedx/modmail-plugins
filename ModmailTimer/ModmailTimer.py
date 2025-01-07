@@ -9,41 +9,42 @@ class ModmailTimer(commands.Cog):
         self.ticket_timers = {}
         self.checking = asyncio.Lock()
         self.bot.loop.create_task(self.check_timers())
-        print("[ModmailTimer] Plugin initialized")
 
     async def check_timers(self):
-        await self.bot.wait_until_ready()
-        print("[ModmailTimer] Starting timer checks")
-        while not self.bot.is_closed():
-            async with self.checking:
-                current_time = datetime.now(timezone.utc)
-                for channel_id, timer_data in list(self.ticket_timers.items()):
-                    try:
-                        channel = self.bot.get_channel(channel_id)
-                        if not channel:
-                            del self.ticket_timers[channel_id]
-                            continue
+        try:
+            await self.bot.wait_until_ready()
+            while not self.bot.is_closed():
+                async with self.checking:
+                    current_time = datetime.now(timezone.utc)
+                    for channel_id, timer_data in list(self.ticket_timers.items()):
+                        try:
+                            channel = self.bot.get_channel(channel_id)
+                            if not channel:
+                                del self.ticket_timers[channel_id]
+                                continue
 
-                        elapsed_minutes = (current_time - timer_data['last_user_message']).total_seconds() / 60
-                        new_emoji = self.get_status_emoji(elapsed_minutes)
-                        
-                        if new_emoji != timer_data['current_emoji']:
-                            current_name = channel.name
-                            if '│' in current_name:
-                                current_name = current_name.split('│')[-1].strip()
-                            elif '-' in current_name:
-                                current_name = current_name.split('-', 1)[-1].strip()
-                            new_name = f"{new_emoji}│{current_name}"
-                            if len(new_name) > 100:
-                                new_name = new_name[:97] + "..."
-                            await channel.edit(name=new_name)
-                            self.ticket_timers[channel_id]['current_emoji'] = new_emoji
-                    except discord.NotFound:
-                        if channel_id in self.ticket_timers:
-                            del self.ticket_timers[channel_id]
-                    except Exception as e:
-                        print(f"[ModmailTimer] Error updating channel {channel_id}: {e}")
-            await asyncio.sleep(60)
+                            elapsed_minutes = (current_time - timer_data['last_user_message']).total_seconds() / 60
+                            new_emoji = self.get_status_emoji(elapsed_minutes)
+                            
+                            if new_emoji != timer_data['current_emoji']:
+                                current_name = channel.name
+                                if '│' in current_name:
+                                    current_name = current_name.split('│')[-1].strip()
+                                elif '-' in current_name:
+                                    current_name = current_name.split('-', 1)[-1].strip()
+                                new_name = f"{new_emoji}│{current_name}"
+                                if len(new_name) > 100:
+                                    new_name = new_name[:97] + "..."
+                                await channel.edit(name=new_name)
+                                self.ticket_timers[channel_id]['current_emoji'] = new_emoji
+                        except discord.NotFound:
+                            if channel_id in self.ticket_timers:
+                                del self.ticket_timers[channel_id]
+                        except Exception as e:
+                            print(f"[ModmailTimer] Error updating channel {channel_id}: {e}")
+                await asyncio.sleep(60)
+        except Exception as e:
+            print(f"[ModmailTimer] Timer check error: {e}")
 
     def get_status_emoji(self, minutes: float) -> str:
         if minutes <= 15:
@@ -65,7 +66,6 @@ class ModmailTimer(commands.Cog):
             return
             
         try:
-            await self.bot.wait_until_ready()
             channel = thread.channel
             if not channel:
                 return
