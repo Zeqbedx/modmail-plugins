@@ -35,11 +35,11 @@ class ModmailTimer(commands.Cog):
             await asyncio.sleep(60)
 
     def get_emoji(self, minutes):
-        if minutes <= 15: return "🟢"
-        if minutes <= 30: return "🟡"
-        if minutes <= 45: return "🟠"
-        if minutes <= 60: return "🔴"
-        if minutes <= 120: return "💀"
+        if seconds <= 3: return "🟢"
+        if seconds <= 5: return "🟡"
+        if seconds <= 10: return "🟠"
+        if seconds <= 15: return "🔴"
+        if seconds <= 20: return "💀"
         return "☠️"
 
     @commands.Cog.listener()
