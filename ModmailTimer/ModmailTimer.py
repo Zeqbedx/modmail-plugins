@@ -7,48 +7,26 @@ class ModmailTimer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.timers = {}
-        self._ready = asyncio.Event()
         self.task = self.bot.loop.create_task(self.timer_loop())
 
-    def cog_unload(self):
-        self.task.cancel()
-
     async def timer_loop(self):
-        try:
-            await self.bot.wait_until_ready()
-            self._ready.set()
-            
-            while True:
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
                 now = datetime.now(timezone.utc)
-                channels_to_update = {}
-
-                for channel_id, last_time in list(self.timers.items()):
-                    channel = self.bot.get_channel(channel_id)
-                    if not channel:
-                        self.timers.pop(channel_id, None)
-                        continue
-
-                    minutes = (now - last_time).total_seconds() / 60
-                    emoji = self.get_emoji(minutes)
-                    
-                    current_name = channel.name
-                    if not current_name.startswith(emoji):
-                        base_name = current_name.split('│', 1)[-1].strip() if '│' in current_name else current_name
-                        channels_to_update[channel] = f"{emoji}│{base_name}"
-
-                for channel, new_name in channels_to_update.items():
+                for cid, time in list(self.timers.items()):
                     try:
-                        await channel.edit(name=new_name[:100])
-                    except (discord.NotFound, discord.Forbidden):
-                        self.timers.pop(channel.id, None)
+                        if channel := self.bot.get_channel(cid):
+                            minutes = (now - time).total_seconds() / 60
+                            emoji = self.get_emoji(minutes)
+                            if not channel.name.startswith(emoji):
+                                name = channel.name.split('│')[-1].strip() if '│' in channel.name else channel.name
+                                await asyncio.wait_for(channel.edit(name=f"{emoji}│{name}"[:100]), timeout=5.0)
                     except Exception:
-                        pass
-
-                await asyncio.sleep(60)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            print(f"Timer loop error: {e}")
+                        self.timers.pop(cid, None)
+            except Exception:
+                pass
+            await asyncio.sleep(60)
 
     def get_emoji(self, minutes):
         if minutes <= 15: return "🟢"
@@ -60,23 +38,17 @@ class ModmailTimer(commands.Cog):
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread):
-        await self._ready.wait()
-        if hasattr(thread, 'channel') and thread.channel:
+        if thread.channel:
             self.timers[thread.channel.id] = datetime.now(timezone.utc)
             try:
-                await thread.channel.edit(name=f"🟢│{thread.channel.name}")
-            except:
+                await asyncio.wait_for(thread.channel.edit(name=f"🟢│{thread.channel.name}"), timeout=5.0)
+            except Exception:
                 pass
 
     @commands.Cog.listener()
     async def on_thread_reply(self, thread, message, creator, channel, is_anonymous=False):
-        await self._ready.wait()
-        if not channel or not creator or is_anonymous:
+        if not (channel and creator and not is_anonymous and not creator.bot):
             return
-            
-        if creator.bot:
-            return
-            
         if hasattr(creator, 'roles'):
             self.timers.pop(channel.id, None)
         else:
