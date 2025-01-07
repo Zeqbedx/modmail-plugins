@@ -1,137 +1,97 @@
 import discord
 from discord.ext import commands
-import asyncio
 from datetime import datetime, timezone
+import asyncio
 
 class ModmailTimer(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.ticket_timers = {}
-        self.checking = asyncio.Lock()
-        self.bot.loop.create_task(self.check_timers())
+        self._timers = {}
+        self._lock = asyncio.Lock()
+        self._task = self.bot.loop.create_task(self._timer_loop())
+    
+    def cog_unload(self):
+        self._task.cancel()
 
-    async def safe_edit_channel(self, channel, **kwargs):
-        try:
-            await channel.edit(**kwargs)
-            return True
-        except discord.NotFound:
-            if channel.id in self.ticket_timers:
-                del self.ticket_timers[channel.id]
-            return False
-        except discord.Forbidden:
-            print(f"[ModmailTimer] Missing permissions to edit channel {channel.id}")
-            return False
-        except Exception as e:
-            print(f"[ModmailTimer] Error editing channel {channel.id}: {e}")
-            return False
-
-    async def check_timers(self):
+    async def _timer_loop(self):
+        await self.bot.wait_until_ready()
         while True:
             try:
-                await self.bot.wait_until_ready()
-                async with self.checking:
-                    current_time = datetime.now(timezone.utc)
-                    for channel_id, timer_data in list(self.ticket_timers.items()):
-                        try:
-                            channel = self.bot.get_channel(channel_id)
-                            if not channel:
-                                del self.ticket_timers[channel_id]
-                                continue
-
-                            elapsed_minutes = (current_time - timer_data['last_user_message']).total_seconds() / 60
-                            new_emoji = self.get_status_emoji(elapsed_minutes)
-                            
-                            if new_emoji != timer_data['current_emoji']:
-                                current_name = channel.name
-                                if '│' in current_name:
-                                    current_name = current_name.split('│')[-1].strip()
-                                elif '-' in current_name:
-                                    current_name = current_name.split('-', 1)[-1].strip()
-                                new_name = f"{new_emoji}│{current_name}"
-                                if len(new_name) > 100:
-                                    new_name = new_name[:97] + "..."
-                                
-                                if await self.safe_edit_channel(channel, name=new_name):
-                                    self.ticket_timers[channel_id]['current_emoji'] = new_emoji
-
-                        except Exception as e:
-                            print(f"[ModmailTimer] Error processing channel {channel_id}: {e}")
-                            continue
-
+                async with self._lock:
+                    await self._update_channels()
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
-                return
+                break
             except Exception as e:
-                print(f"[ModmailTimer] Main loop error: {e}")
+                print(f"Timer error: {e}")
                 await asyncio.sleep(60)
 
-    def get_status_emoji(self, minutes: float) -> str:
-        if minutes <= 15:
-            return "🟢"
-        elif minutes <= 30:
-            return "🟡"
-        elif minutes <= 45:
-            return "🟠"
-        elif minutes <= 60:
-            return "🔴"
-        elif minutes <= 120:
-            return "💀"
-        else:
-            return "☠️"
+    async def _update_channels(self):
+        now = datetime.now(timezone.utc)
+        for channel_id, data in list(self._timers.items()):
+            try:
+                channel = self.bot.get_channel(channel_id)
+                if not channel:
+                    del self._timers[channel_id]
+                    continue
+
+                minutes = (now - data['timestamp']).total_seconds() / 60
+                emoji = self._get_emoji(minutes)
+                
+                if emoji != data['emoji']:
+                    name = channel.name.split('│')[-1].strip() if '│' in channel.name else channel.name
+                    new_name = f"{emoji}│{name}"[:100]
+                    
+                    try:
+                        await channel.edit(name=new_name)
+                        self._timers[channel_id]['emoji'] = emoji
+                    except (discord.NotFound, discord.Forbidden):
+                        del self._timers[channel_id]
+                    except Exception as e:
+                        print(f"Channel update error: {e}")
+            except Exception as e:
+                print(f"Channel {channel_id} error: {e}")
+
+    def _get_emoji(self, minutes: float) -> str:
+        if minutes <= 15: return "🟢"
+        if minutes <= 30: return "🟡"
+        if minutes <= 45: return "🟠"
+        if minutes <= 60: return "🔴"
+        if minutes <= 120: return "💀"
+        return "☠️"
+
+    def _start_timer(self, channel):
+        if not channel:
+            return
+        self._timers[channel.id] = {
+            'timestamp': datetime.now(timezone.utc),
+            'emoji': "🟢"
+        }
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread):
-        if not hasattr(thread, 'channel') or not thread.channel:
-            return
-            
-        try:
-            channel = thread.channel
-            if not channel:
-                return
-                
-            self.ticket_timers[channel.id] = {
-                'last_user_message': datetime.now(timezone.utc),
-                'current_emoji': "🟢"
-            }
-            await self.safe_edit_channel(channel, name=f"🟢│{channel.name}")
-        except Exception as e:
-            print(f"[ModmailTimer] Error in thread create: {e}")
+        if hasattr(thread, 'channel') and thread.channel:
+            self._start_timer(thread.channel)
+            await thread.channel.edit(name=f"🟢│{thread.channel.name}")
 
     @commands.Cog.listener()
     async def on_thread_reply(self, thread, message, creator, channel, is_anonymous=False):
-        if not channel or is_anonymous:
+        if not channel or is_anonymous or creator.bot:
             return
 
-        try:
-            if creator.bot:
-                return
-                
-            is_mod = hasattr(creator, 'roles')
-            
-            if is_mod:
-                if channel.id in self.ticket_timers:
-                    del self.ticket_timers[channel.id]
-                    current_name = channel.name
-                    if '│' in current_name:
-                        current_name = current_name.split('│')[-1].strip()
-                    elif '-' in current_name:
-                        current_name = current_name.split('-', 1)[-1].strip()
-                    await self.safe_edit_channel(channel, name=f"🟢│{current_name}")
-            else:
-                self.ticket_timers[channel.id] = {
-                    'last_user_message': datetime.now(timezone.utc),
-                    'current_emoji': "🟢"
-                }
-        except Exception as e:
-            print(f"[ModmailTimer] Error in thread reply: {e}")
+        is_mod = hasattr(creator, 'roles')
+        if is_mod:
+            if channel.id in self._timers:
+                del self._timers[channel.id]
+                name = channel.name.split('│')[-1].strip() if '│' in channel.name else channel.name
+                await channel.edit(name=f"🟢│{name}")
+        else:
+            self._start_timer(channel)
 
     @commands.Cog.listener()
-    async def on_thread_close(self, thread, closer, silent, delete_channel, message, scheduled=False):
-        try:
-            if thread.channel and thread.channel.id in self.ticket_timers:
-                del self.ticket_timers[thread.channel.id]
-        except Exception as e:
-            print(f"[ModmailTimer] Error in thread close: {e}")
+    async def on_thread_close(self, thread, *args, **kwargs):
+        if thread.channel and thread.channel.id in self._timers:
+            del self._timers[thread.channel.id]
 
 async def setup(bot):
     await bot.add_cog(ModmailTimer(bot))
