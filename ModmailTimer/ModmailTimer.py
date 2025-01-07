@@ -35,7 +35,14 @@ class ModmailTimer(commands.Cog):
                                 new_name = f"{new_emoji}│{current_name}"
                                 if len(new_name) > 100:
                                     new_name = new_name[:97] + "..."
-                                await channel.edit(name=new_name)
+                                try:
+                    await channel.edit(name=new_name)
+                except discord.NotFound:
+                    del self.ticket_timers[channel_id]
+                    continue
+                except Exception as e:
+                    print(f"[ModmailTimer] Failed to edit channel name: {e}")
+                    continue
                                 self.ticket_timers[channel_id]['current_emoji'] = new_emoji
                         except discord.NotFound:
                             if channel_id in self.ticket_timers:
